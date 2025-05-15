@@ -1,0 +1,10 @@
+numpy
+pandas
+scikit-learn
+textblob
+transformers
+torch
+joblib
+jax
+jaxlib
+flax
