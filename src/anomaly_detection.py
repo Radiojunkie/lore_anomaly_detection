@@ -8,7 +8,7 @@ ANOMALY_CATEGORIES = {
 }
 
 DISTRESS_THRESHOLDS = {
-    "none/mild": (0.5, 0.8),
+    "mild": (0.5, 0.8),
     "moderate": (0.8, 1.2),
     "severe": (1.2, float("inf"))  # Anything above 1.2 is severe
 }
@@ -25,8 +25,15 @@ ANOMALY_FACTORS = {
     "security_threats": 1.5  # Security risks add more severity
 }
 
+RISK_LEVELS = {
+    "low": (0.5, 0.8),
+    "medium": (0.8, 1.2),
+    "high": (1.2, 1.5),
+    "critical": (1.5, float("inf"))
+}
+
 def detect_anomalies(messages):
-    """Detects anomalies and ensures all flagged messages are logged with distress levels."""
+    """Detects anomalies and ensures all flagged messages are logged with risk and distress levels."""
     model = load_anomaly_detection_model()
     user_moods = defaultdict(str)
     anomalies = []
@@ -43,14 +50,15 @@ def detect_anomalies(messages):
 
         detected_issue = "General Anomaly"
         distress_level = 0.5  # Default base distress level
-        mood_shift_factor = 1.0  # Default neutral mood shift
-        anomaly_factor = 1.0  # Default if no anomalies detected
+        anomaly_type = "General"  # Default classification
+        anomaly_weight = 1.0  # Default weight
 
-        # Detect anomalies
+        # Detect anomalies & classify them
         for category, triggers in ANOMALY_CATEGORIES.items():
             if any(trigger.lower() in msg["message"].lower() for trigger in triggers):
                 detected_issue = category.replace("_", " ").title()
-                anomaly_factor = ANOMALY_FACTORS.get(category, 1.0)
+                anomaly_type = category.title()
+                anomaly_weight = ANOMALY_FACTORS.get(category, 1.0)
 
         # Mood tracking
         prev_mood = user_moods.get(msg["ref_user_id"], "neutral")
@@ -62,19 +70,23 @@ def detect_anomalies(messages):
 
         # Scaled distress calculation
         if sentiment_label == "NEGATIVE" and isinstance(sentiment_score, float):
-            distress_level = sentiment_score * mood_shift_factor * anomaly_factor
+            distress_level = sentiment_score * mood_shift_factor * anomaly_weight
 
         # Convert distress score into categorical level
         distress_category = next((level for level, (low, high) in DISTRESS_THRESHOLDS.items() if low <= distress_level <= high), "none")
+
+        # Assign risk level
+        risk_factor = next((level for level, (low, high) in RISK_LEVELS.items() if low <= distress_level <= high), "low")
 
         anomalies.append({
             **msg,
             "detected_issue": detected_issue,
             "sentiment_label": sentiment_label,
             "confidence_score": sentiment_score if isinstance(sentiment_score, float) else "N/A",
-            "distress_level": distress_category,  # Categorized distress level
-            "mood_shift": mood_shift,  # Properly categorized mood shift
-            "potential_concern": "Distress" if distress_category != "none" else "General Concern"
+            "distress_level": distress_category,
+            "mood_shift": mood_shift,
+            "risk_factor": risk_factor,
+            "anomaly_type": anomaly_type
         })
 
     return anomalies
