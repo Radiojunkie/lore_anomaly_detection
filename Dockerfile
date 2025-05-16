@@ -12,5 +12,5 @@ RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
 # Set the default command for the container
-CMD ["python", "load_huggingface_model.py"]
-CMD ["python", "__init__.py"]
+CMD ["python", "models/load_huggingface_model.py"]
+CMD ["python", "src/__init__.py"]
