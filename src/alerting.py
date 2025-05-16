@@ -9,7 +9,7 @@ os.makedirs(log_dir, exist_ok=True)
 logging.basicConfig(
     filename=log_file,
     level=logging.WARNING,
-    format="%(asctime)s - HIGH-RISK - %(message)s"
+    format="%(asctime)s - Anomaly Detection - %(message)s"
 )
 
 processed_conversations = set()
