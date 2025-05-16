@@ -1,5 +1,6 @@
 import logging
 import os
+from collections import defaultdict
 
 log_dir = os.path.join(os.path.dirname(__file__), "logs")
 log_file = os.path.join(log_dir, "high_risk_anomalies.log")
@@ -12,11 +13,14 @@ logging.basicConfig(
     format="%(asctime)s - Anomaly Detection - %(message)s"
 )
 
-processed_conversations = set()
-CACHE_RESET_INTERVAL = 10000  # Reset cache every 10000 messages
+processed_messages = set()
+CACHE_RESET_INTERVAL = 10000  # Reset cache every 10,000 messages
 
 def format_alert_message(anomalous_message):
-    """Formats detected anomaly alert with sentiment label, confidence score, and mood shifts."""
+    """Formats instant alert messages, filtering out StoryBot."""
+    if anomalous_message["screen_name"] == "StoryBot":
+        return None  # ❌ Skip StoryBot alerts
+
     return (
         f"🚨 *User Alert!*\n"
         f"👤 *User:* {anomalous_message['screen_name']}\n"
@@ -28,33 +32,56 @@ def format_alert_message(anomalous_message):
         f"📊 *Confidence Score:* {anomalous_message.get('confidence_score', 'N/A')}\n"
         f"🔄 *Mood Shift:* {anomalous_message.get('mood_shift', 'None')}\n"
         f"🔥 *Distress Level:* {anomalous_message.get('distress_level', 'None')}\n"
-        f"🔥 *Potential Concern:* {anomalous_message.get('potential_concern', 'None')}\n"
+        f"🔥 *Risk Factor:* {anomalous_message.get('risk_factor', 'None')}\n"
+        f"🛑 *Anomaly Type:* {anomalous_message.get('anomaly_type', 'None')}\n"
     )
 
-def send_alert(anomalous_messages):
-    """Logs high-risk anomalies, prevents duplicate alerts, and clears cache periodically."""
-    global processed_conversations
+def format_log_entry(conversation_messages):
+    """Formats logged conversations grouped by ref_conversation_id, sorted by timestamp."""
+    log_entry = "\n📌 **Conversation Log** 📌\n"
 
-    if len(processed_conversations) > CACHE_RESET_INTERVAL:
+    for msg in sorted(conversation_messages, key=lambda x: x["transaction_datetime_utc"]):
+        log_entry += (
+            f"⏰ {msg['transaction_datetime_utc']} | 🗣 {msg['screen_name']}: {msg['message']}\n"
+        )
+
+    log_entry += "\n---------------------------------\n"
+    return log_entry
+
+def send_alert(anomalous_messages):
+    """Logs high-risk anomalies instantly (excluding StoryBot) & stores full conversation history."""
+    global processed_messages
+
+    if len(processed_messages) > CACHE_RESET_INTERVAL:
         print("♻️ Clearing cache to prevent memory overload...")
-        processed_conversations.clear()
+        processed_messages.clear()
+
+    conversation_groups = defaultdict(list)
 
     for msg in anomalous_messages:
-        conversation_id = msg.get("ref_conversation_id")
+        message_id = msg.get("transaction_datetime_utc") + str(msg.get("ref_user_id"))
 
-        if not conversation_id:
-            print(f"⚠️ Skipping alert due to missing ref_conversation_id: {msg}")
+        if not message_id:
+            print(f"⚠️ Skipping alert due to missing unique message ID: {msg}")
             continue
 
-        if conversation_id in processed_conversations:
-            continue
+        if message_id in processed_messages:
+            continue  # ✅ Prevent duplicate alerts
 
-        processed_conversations.add(conversation_id)
+        processed_messages.add(message_id)
 
+        # ✅ **Instant Alert (excluding StoryBot)**
         readable_alert = format_alert_message(msg)
-        logging.warning(readable_alert)
+        if readable_alert:
+            logging.warning(readable_alert)
+            print("\n--- Simulated Slack Alert ---")
+            print(readable_alert)
+            print("----------------------------")
 
-        # Simulated Slack output
-        print("\n--- Simulated Slack Alert ---")
-        print(readable_alert)
-        print("----------------------------")
+        # ✅ **Group messages for logging based on conversation ID**
+        conversation_groups[msg["ref_conversation_id"]].append(msg)
+
+    # ✅ **Log entire conversations grouped by ID, maintaining timestamp order**
+    for conversation_id, messages in conversation_groups.items():
+        formatted_log = format_log_entry(messages)
+        logging.warning(formatted_log)

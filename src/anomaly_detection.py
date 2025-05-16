@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import datetime
 from models.load_huggingface_model import load_anomaly_detection_model
 
 ANOMALY_CATEGORIES = {
@@ -10,19 +11,19 @@ ANOMALY_CATEGORIES = {
 DISTRESS_THRESHOLDS = {
     "mild": (0.5, 0.8),
     "moderate": (0.8, 1.2),
-    "severe": (1.2, float("inf"))  # Anything above 1.2 is severe
+    "severe": (1.2, float("inf"))
 }
 
 MOOD_SHIFT_FACTORS = {
     "positive to negative": 1.2,
-    "negative to positive": 0.8,  # Recovery phase
+    "negative to positive": 0.8,
     "stable": 1.0
 }
 
 ANOMALY_FACTORS = {
     "distress": 1.3,
     "uncertainty": 1.1,
-    "security_threats": 1.5  # Security risks add more severity
+    "security_threats": 1.5
 }
 
 RISK_LEVELS = {
@@ -32,10 +33,11 @@ RISK_LEVELS = {
     "critical": (1.5, float("inf"))
 }
 
+user_moods = defaultdict(lambda: {"mood": "neutral", "last_active_date": None})
+
 def detect_anomalies(messages):
-    """Detects anomalies and ensures all flagged messages are logged with risk and distress levels."""
+    """Detects anomalies while ensuring users reset to 'neutral' at the start of a new day."""
     model = load_anomaly_detection_model()
-    user_moods = defaultdict(str)
     anomalies = []
 
     for msg in messages:
@@ -49,33 +51,39 @@ def detect_anomalies(messages):
             sentiment_score = round(result[0]["score"], 2)
 
         detected_issue = "General Anomaly"
-        distress_level = 0.5  # Default base distress level
-        anomaly_type = "General"  # Default classification
-        anomaly_weight = 1.0  # Default weight
+        distress_level = 0.5
+        anomaly_type = "General"
+        anomaly_weight = 1.0
 
-        # Detect anomalies & classify them
+        # Extract user mood tracking
+        user_id = msg["ref_user_id"]
+        timestamp = datetime.strptime(msg["transaction_datetime_utc"], "%Y-%m-%dT%H:%M:%S%z")
+        message_date = timestamp.date()
+
+        # Reset mood if it's a new day
+        if user_moods[user_id]["last_active_date"] and user_moods[user_id]["last_active_date"] != message_date:
+            user_moods[user_id]["mood"] = "neutral"
+
+        prev_mood = user_moods[user_id]["mood"]
+        current_mood = "positive" if sentiment_label == "POSITIVE" else "negative"
+        user_moods[user_id]["mood"] = current_mood
+        user_moods[user_id]["last_active_date"] = message_date  # Update last active date
+
+        mood_shift = f"{prev_mood} to {current_mood}" if prev_mood != current_mood else "Stable"
+        mood_shift_factor = MOOD_SHIFT_FACTORS.get(mood_shift, 1.0)
+
+        # Detect anomalies
         for category, triggers in ANOMALY_CATEGORIES.items():
             if any(trigger.lower() in msg["message"].lower() for trigger in triggers):
                 detected_issue = category.replace("_", " ").title()
                 anomaly_type = category.title()
                 anomaly_weight = ANOMALY_FACTORS.get(category, 1.0)
 
-        # Mood tracking
-        prev_mood = user_moods.get(msg["ref_user_id"], "neutral")
-        current_mood = "positive" if sentiment_label == "POSITIVE" else "negative"
-        user_moods[msg["ref_user_id"]] = current_mood
-
-        mood_shift = f"{prev_mood} to {current_mood}" if prev_mood != current_mood else "Stable"
-        mood_shift_factor = MOOD_SHIFT_FACTORS.get(mood_shift, 1.0)
-
         # Scaled distress calculation
         if sentiment_label == "NEGATIVE" and isinstance(sentiment_score, float):
             distress_level = sentiment_score * mood_shift_factor * anomaly_weight
 
-        # Convert distress score into categorical level
         distress_category = next((level for level, (low, high) in DISTRESS_THRESHOLDS.items() if low <= distress_level <= high), "none")
-
-        # Assign risk level
         risk_factor = next((level for level, (low, high) in RISK_LEVELS.items() if low <= distress_level <= high), "low")
 
         anomalies.append({
