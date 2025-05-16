@@ -8,3 +8,4 @@ joblib
 jax
 jaxlib
 flax
+kafka-python
