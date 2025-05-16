@@ -1,5 +1,5 @@
 import time
-from anomaly_detection import detect_high_risk_anomalies
+from anomaly_detection import detect_anomalies
 
 
 def live_simulation():
@@ -15,7 +15,7 @@ def live_simulation():
             break
 
         test_message = [{"message": user_input}]
-        anomalies = detect_high_risk_anomalies(test_message)
+        anomalies = detect_anomalies(test_message)
 
         if anomalies:
             print("🚨 High-Risk Message Detected!")
