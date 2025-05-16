@@ -19,7 +19,7 @@ CACHE_RESET_INTERVAL = 10000  # Reset cache every 10,000 messages
 def format_alert_message(anomalous_message):
     """Formats instant alert messages, filtering out StoryBot."""
     if anomalous_message["screen_name"] == "StoryBot":
-        return None  # ❌ Skip StoryBot alerts
+        return None
 
     return (
         f"🚨 *User Alert!*\n"
